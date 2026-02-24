@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interview Timer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f1ec;
+    --bg2: #eae6df;
+    --text: #2a2520;
+    --text-sec: #8a8279;
+    --text-tri: #b5aea5;
+    --border: #ddd7ce;
+    --shadow: rgba(42,37,32,0.06);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Instrument Sans', sans-serif;
+    display:flex; justify-content:center; align-items:center; min-height:100vh;
+  }
+  body::before {
+    content:''; position:fixed; inset:0; pointer-events:none;
+    background: radial-gradient(ellipse at 30% 20%, rgba(215,130,80,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 80%, rgba(100,140,180,0.05) 0%, transparent 50%);
+  }
+  .container {
+    width:760px; padding:40px 48px 32px; background:#fff;
+    border-radius:16px; border:1px solid var(--border);
+    box-shadow: 0 1px 3px var(--shadow), 0 8px 32px var(--shadow);
+  }
+
+  .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; }
+  .title { font-size:12px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-sec); margin-bottom:4px; }
+  .clock {
+    font-family:'IBM Plex Mono',monospace; font-size:44px; font-weight:600;
+    letter-spacing:-0.03em; line-height:1; transition:color 0.4s;
+  }
+  .clock.warning { color:#c67a1a; }
+  .clock.danger  { color:#c0392b; }
+  .total-badge {
+    font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:500;
+    color:var(--text-sec); background:var(--bg); border:1px solid var(--border);
+    padding:6px 14px; border-radius:8px;
+  }
+
+  #chart-area { margin-bottom:4px; }
+  .seg-info { text-align:center; font-size:13px; font-weight:500; color:var(--text-sec); min-height:20px; margin-bottom:20px; }
+  .seg-info span { font-weight:700; }
+
+  .table-section { border-top:1px solid var(--border); padding-top:18px; margin-bottom:20px; }
+  .table-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .table-label { font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-tri); }
+  .add-btn {
+    font-family:'Instrument Sans',sans-serif; font-size:12px; font-weight:600;
+    color:#5c6bc0; background:#e8eaf6; border:1px solid #c5cae9;
+    border-radius:6px; padding:4px 12px; cursor:pointer; transition:background 0.15s;
+  }
+  .add-btn:hover { background:#d1d5f0; }
+  .add-btn:disabled { opacity:0.4; cursor:default; }
+
+  table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  thead th {
+    font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--text-tri); text-align:left; padding:0 8px 6px; border-bottom:1px solid var(--border);
+  }
+  thead th:nth-child(1) { width:28px; padding-left:4px; }
+  thead th:nth-child(3) { width:80px; text-align:right; }
+  thead th:nth-child(4) { width:32px; }
+
+  tbody tr { border-bottom:1px solid rgba(221,215,206,0.5); transition:background 0.1s; }
+  tbody tr:hover { background:rgba(244,241,236,0.5); }
+  tbody td { padding:5px 8px; vertical-align:middle; }
+  tbody td:nth-child(1) { padding-left:4px; }
+
+  .color-dot {
+    width:14px; height:14px; border-radius:4px; display:inline-block;
+    border:1px solid rgba(0,0,0,0.08); position:relative; cursor:pointer;
+  }
+  .color-dot input[type=color] {
+    position:absolute; inset:0; opacity:0; width:100%; height:100%; cursor:pointer; border:none;
+  }
+  .name-in {
+    font-family:'Instrument Sans',sans-serif; font-size:13.5px; font-weight:500;
+    color:var(--text); border:none; background:transparent; width:100%; padding:2px 0; outline:none;
+  }
+  .name-in:focus { border-bottom:1.5px solid #5c6bc0; }
+  .min-in {
+    font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:500;
+    color:var(--text); border:none; background:transparent; width:48px;
+    text-align:right; padding:2px 0; outline:none;
+  }
+  .min-in:focus { border-bottom:1.5px solid #5c6bc0; }
+  .min-suffix { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text-tri); margin-left:2px; }
+  .del-btn {
+    background:none; border:none; cursor:pointer; color:var(--text-tri);
+    font-size:16px; padding:2px 4px; border-radius:4px; transition:all 0.1s;
+  }
+  .del-btn:hover { background:#fce4ec; color:#c0392b; }
+
+  .controls { display:flex; gap:10px; justify-content:center; }
+  button.ctrl {
+    font-family:'Instrument Sans',sans-serif; font-size:13.5px; font-weight:600;
+    letter-spacing:0.02em; border:none; cursor:pointer; padding:10px 28px;
+    border-radius:8px; transition:all 0.15s;
+  }
+  .btn-start { background:var(--text); color:#fff; }
+  .btn-start:hover { background:#3d3630; transform:translateY(-1px); box-shadow:0 4px 12px rgba(42,37,32,0.15); }
+  .btn-pause { background:#fef3e2; color:#c67a1a; border:1px solid #f5d9a8; }
+  .btn-pause:hover { background:#fdecc8; }
+  .btn-reset { background:var(--bg); color:var(--text-sec); border:1px solid var(--border); }
+  .btn-reset:hover { background:var(--bg2); color:var(--text); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <div class="title">Interview Timer</div>
+      <div class="clock" id="clock">30:00</div>
+    </div>
+    <div class="total-badge" id="totalBadge">30 min total</div>
+  </div>
+  <div id="chart-area"></div>
+  <div class="seg-info" id="segInfo"></div>
+  <div class="table-section">
+    <div class="table-head">
+      <span class="table-label">Segments</span>
+      <button class="add-btn" id="addBtn">+ Add</button>
+    </div>
+    <table>
+      <thead><tr><th></th><th>Section</th><th>Minutes</th><th></th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div class="controls">
+    <button class="ctrl btn-start" id="startBtn">Start</button>
+    <button class="ctrl btn-reset" id="resetBtn">Reset</button>
+  </div>
+</div>
+
+<script>
+const PALETTE = [
+  ['#5c6bc0','#e8eaf6'],['#7e57c2','#ede7f6'],['#d4437b','#fce4ec'],
+  ['#e6930a','#fff8e1'],['#2e9e6e','#e8f5e9'],['#00897b','#e0f2f1'],
+  ['#e53935','#ffebee'],['#3f51b5','#e8eaf6'],['#8d6e63','#efebe9'],['#546e7a','#eceff1'],
+];
+
+function lighten(hex) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  const m=c=>Math.round(c+(255-c)*0.82);
+  return `rgb(${m(r)},${m(g)},${m(b)})`;
+}
+
+// ── Segment ──
+class Segment {
+  constructor(name, minutes, color, colorLight) {
+    this.name = name;
+    this.minutes = minutes;
+    this.color = color;
+    this.colorLight = colorLight;
+  }
+}
+
+// ── Model ──
+class TimerModel {
+  constructor(segments) {
+    this.segments = segments;
+    this.elapsed = 0;
+    this.running = false;
+    this._iv = null;
+    this._cbs = [];
+  }
+
+  get totalMinutes() { return this.segments.reduce((s, seg) => s + seg.minutes, 0); }
+  get totalSeconds() { return this.totalMinutes * 60; }
+  get remaining()    { return Math.max(0, this.totalSeconds - this.elapsed); }
+  get progress()     { return this.totalSeconds > 0 ? Math.min(1, this.elapsed / this.totalSeconds) : 0; }
+  get done()         { return this.totalSeconds > 0 && this.elapsed >= this.totalSeconds; }
+
+  fraction(i) { return this.totalMinutes > 0 ? this.segments[i].minutes / this.totalMinutes : 0; }
+
+  currentSegment() {
+    let sec = 0;
+    for (const seg of this.segments) {
+      sec += seg.minutes * 60;
+      if (this.elapsed < sec) return seg;
+    }
+    return this.segments[this.segments.length - 1];
+  }
+
+  addSegment() {
+    const p = PALETTE[this.segments.length % PALETTE.length];
+    this.segments.push(new Segment('New section', 5, p[0], p[1]));
+    this._emit();
+  }
+
+  removeSegment(i) {
+    if (this.segments.length <= 1) return;
+    this.segments.splice(i, 1);
+    this._emit();
+  }
+
+  updateSegment(i, props) {
+    Object.assign(this.segments[i], props);
+    this._emit();
+  }
+
+  start() {
+    if (this.running || this.done || this.totalSeconds === 0) return;
+    this.running = true;
+    this._iv = setInterval(() => {
+      this.elapsed++;
+      if (this.elapsed >= this.totalSeconds) { this.elapsed = this.totalSeconds; this.pause(); }
+      this._emit();
+    }, 1000);
+    this._emit();
+  }
+
+  pause() { clearInterval(this._iv); this.running = false; this._emit(); }
+  reset() { this.pause(); this.elapsed = 0; this._emit(); }
+  onChange(fn) { this._cbs.push(fn); }
+  _emit() { this._cbs.forEach(fn => fn(this)); }
+}
+
+// ── Bar View (D3) ──
+class BarView {
+  constructor(sel, model) {
+    this.model = model;
+    this.W = 664; this.H = 36; this.mt = 38; this.mb = 28;
+    this.x = d3.scaleLinear().domain([0,1]).range([0,this.W]);
+    this.svg = d3.select(sel).append('svg')
+      .attr('width', this.W).attr('height', this.mt + this.H + this.mb)
+      .attr('viewBox', `0 0 ${this.W} ${this.mt + this.H + this.mb}`);
+    const defs = this.svg.append('defs');
+    this.clip = defs.append('clipPath').attr('id','pc').append('rect')
+      .attr('x',0).attr('y',0).attr('width',0).attr('height',this.H).attr('rx',10);
+    defs.append('clipPath').attr('id','bs').append('rect')
+      .attr('x',0).attr('y',0).attr('width',this.W).attr('height',this.H).attr('rx',10);
+    const g = this.svg.append('g').attr('transform',`translate(0,${this.mt})`);
+    this.bgG = g.append('g').attr('clip-path','url(#bs)');
+    this.fillG = g.append('g').attr('clip-path','url(#bs)').append('g').attr('clip-path','url(#pc)');
+    this.divG = g.append('g').attr('clip-path','url(#bs)');
+    g.append('rect').attr('width',this.W).attr('height',this.H).attr('rx',10)
+      .attr('fill','none').attr('stroke','var(--border)').attr('stroke-width',1.5);
+    this.head = g.append('rect').attr('width',3).attr('height',this.H+4)
+      .attr('y',-2).attr('rx',1.5).attr('fill','var(--text)').attr('opacity',0);
+    this.nameG = this.svg.append('g');
+    this.durG = this.svg.append('g');
+  }
+
+  render(m) {
+    const x = this.x, H = this.H, mt = this.mt, tot = m.totalMinutes;
+    const sd = []; let c = 0;
+    m.segments.forEach((seg, i) => {
+      const f = m.fraction(i); const s = c; c += f;
+      sd.push({ seg, i, x0:x(s), x1:x(c), frac:f });
+    });
+
+    this._rects(this.bgG, sd, d=>d.seg.colorLight);
+    this._rects(this.fillG, sd, d=>d.seg.color);
+    this.clip.attr('width', x(m.progress));
+    this.head.attr('x', x(m.progress)-1.5).attr('opacity', m.elapsed>0?0.7:0);
+
+    const dv = sd.slice(1);
+    const dl = this.divG.selectAll('line').data(dv, d=>d.i);
+    dl.enter().append('line').merge(dl)
+      .attr('x1',d=>d.x0).attr('x2',d=>d.x0).attr('y1',0).attr('y2',H)
+      .attr('stroke','rgba(42,37,32,0.1)').attr('stroke-width',1);
+    dl.exit().remove();
+
+    const vis = sd.filter(d=>(d.x1-d.x0)>40);
+    const nl = this.nameG.selectAll('text').data(vis, d=>d.i);
+    nl.enter().append('text')
+      .attr('font-family','Instrument Sans,sans-serif').attr('font-weight',600)
+      .attr('font-size',12).attr('fill','var(--text)').attr('pointer-events','none')
+      .merge(nl)
+      .attr('x',d=>(d.x0+d.x1)/2).attr('y',mt-12).attr('text-anchor','middle')
+      .text(d=>{ const w=d.x1-d.x0; return w<70 && d.seg.name.length>8 ? d.seg.name.slice(0,6)+'…' : d.seg.name; });
+    nl.exit().remove();
+
+    const dll = this.durG.selectAll('text').data(vis, d=>d.i);
+    dll.enter().append('text')
+      .attr('font-family','IBM Plex Mono,monospace').attr('font-weight',400)
+      .attr('font-size',10.5).attr('fill','var(--text-sec)').attr('pointer-events','none')
+      .merge(dll)
+      .attr('x',d=>(d.x0+d.x1)/2).attr('y',mt+H+16).attr('text-anchor','middle')
+      .text(d=>d.seg.minutes>=1?`${d.seg.minutes}m`:`${(d.seg.minutes*60)|0}s`);
+    dll.exit().remove();
+  }
+
+  _rects(g, data, fill) {
+    const r = g.selectAll('rect').data(data, d=>d.i);
+    r.enter().append('rect').merge(r)
+      .attr('x',d=>d.x0).attr('width',d=>Math.max(0,d.x1-d.x0))
+      .attr('y',0).attr('height',this.H).attr('fill',fill);
+    r.exit().remove();
+  }
+}
+
+// ── Table View ──
+class TableView {
+  constructor(tbodySel, model) {
+    this.tbody = document.querySelector(tbodySel);
+    this.model = model;
+  }
+
+  render(m) {
+    const tb = this.tbody, dis = m.running;
+    while (tb.rows.length > m.segments.length) tb.deleteRow(tb.rows.length-1);
+    while (tb.rows.length < m.segments.length) this._addRow();
+
+    m.segments.forEach((seg, i) => {
+      const row = tb.rows[i];
+      const dot = row.querySelector('.color-dot');
+      const cIn = row.querySelector('input[type=color]');
+      const nIn = row.querySelector('.name-in');
+      const mIn = row.querySelector('.min-in');
+      const del = row.querySelector('.del-btn');
+
+      dot.style.backgroundColor = seg.color;
+      cIn.value = seg.color;
+      if (document.activeElement !== nIn) nIn.value = seg.name;
+      if (document.activeElement !== mIn) mIn.value = seg.minutes;
+      nIn.disabled = dis; mIn.disabled = dis; del.disabled = dis; cIn.disabled = dis;
+      del.style.visibility = m.segments.length <= 1 ? 'hidden' : 'visible';
+    });
+  }
+
+  _addRow() {
+    const row = this.tbody.insertRow(), m = this.model;
+    const idx = () => Array.from(this.tbody.rows).indexOf(row);
+
+    const c1 = row.insertCell();
+    const dot = document.createElement('div'); dot.className = 'color-dot';
+    const cIn = document.createElement('input'); cIn.type = 'color';
+    cIn.addEventListener('input', () => m.updateSegment(idx(), { color:cIn.value, colorLight:lighten(cIn.value) }));
+    dot.appendChild(cIn); c1.appendChild(dot);
+
+    const c2 = row.insertCell();
+    const nIn = document.createElement('input'); nIn.type = 'text'; nIn.className = 'name-in';
+    nIn.addEventListener('input', () => m.updateSegment(idx(), { name:nIn.value }));
+    c2.appendChild(nIn);
+
+    const c3 = row.insertCell(); c3.style.textAlign = 'right';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:2px';
+    const mIn = document.createElement('input'); mIn.type = 'number'; mIn.className = 'min-in';
+    mIn.min = '0.5'; mIn.step = '0.5';
+    mIn.addEventListener('change', () => {
+      const v = parseFloat(mIn.value);
+      if (!isNaN(v) && v > 0) m.updateSegment(idx(), { minutes:v });
+    });
+    const suf = document.createElement('span'); suf.className = 'min-suffix'; suf.textContent = 'min';
+    wrap.appendChild(mIn); wrap.appendChild(suf); c3.appendChild(wrap);
+
+    const c4 = row.insertCell(); c4.style.textAlign = 'center';
+    const del = document.createElement('button'); del.className = 'del-btn'; del.textContent = '×';
+    del.addEventListener('click', () => m.removeSegment(idx()));
+    c4.appendChild(del);
+  }
+}
+
+// ── Controller ──
+class TimerController {
+  constructor() {
+    this.model = new TimerModel([
+      new Segment('Introduction', 7, '#5c6bc0', '#e8eaf6'),
+      new Segment('Candidate Narrative', 6, '#7e57c2', '#ede7f6'),
+      new Segment('Research project deep dive', 12, '#d4437b', '#fce4ec'),
+      new Segment("Questions", 5, '#e6930a', '#fff8e1'),
+    ]);
+
+    this.bar = new BarView('#chart-area', this.model);
+    this.table = new TableView('#tbody', this.model);
+    this.clockEl = document.getElementById('clock');
+    this.segEl = document.getElementById('segInfo');
+    this.badge = document.getElementById('totalBadge');
+    this.startBtn = document.getElementById('startBtn');
+    this.resetBtn = document.getElementById('resetBtn');
+    this.addBtn = document.getElementById('addBtn');
+
+    this.startBtn.addEventListener('click', () => this.model.running ? this.model.pause() : this.model.start());
+    this.resetBtn.addEventListener('click', () => this.model.reset());
+    this.addBtn.addEventListener('click', () => this.model.addSegment());
+
+    this.model.onChange(m => this._update(m));
+    this._update(this.model);
+  }
+
+  _fmt(s) { const m=Math.floor(s/60), r=s%60; return `${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`; }
+
+  _update(m) {
+    this.clockEl.textContent = this._fmt(m.remaining);
+    this.clockEl.className = 'clock';
+    this.badge.textContent = `${m.totalMinutes} min total`;
+
+    if (m.segments.length >= 2 && m.elapsed > 0) {
+      const last = m.segments[m.segments.length-1], pen = m.segments[m.segments.length-2];
+      const dangerAt = 1 - (last.minutes / m.totalMinutes);
+      const warnAt = dangerAt - (pen.minutes / m.totalMinutes);
+      if (m.progress >= dangerAt) this.clockEl.classList.add('danger');
+      else if (m.progress >= warnAt) this.clockEl.classList.add('warning');
+    }
+
+    if (m.elapsed > 0 && !m.done) {
+      const seg = m.currentSegment();
+      this.segEl.innerHTML = `Now: <span style="color:${seg.color}">${seg.name}</span>`;
+    } else if (m.done) {
+      this.segEl.innerHTML = `<span style="color:#c0392b">Time's up!</span>`;
+    } else { this.segEl.innerHTML = ''; }
+
+    if (m.running) {
+      this.startBtn.textContent = 'Pause'; this.startBtn.className = 'ctrl btn-pause';
+      this.addBtn.disabled = true;
+    } else if (m.done) {
+      this.startBtn.textContent = 'Done'; this.startBtn.className = 'ctrl btn-start';
+      this.startBtn.disabled = true; this.addBtn.disabled = true;
+    } else {
+      this.startBtn.textContent = m.elapsed > 0 ? 'Resume' : 'Start';
+      this.startBtn.className = 'ctrl btn-start'; this.startBtn.disabled = false;
+      this.addBtn.disabled = false;
+    }
+
+    this.bar.render(m);
+    this.table.render(m);
+  }
+}
+
+new TimerController();
+</script>
+</body>
+</html>
