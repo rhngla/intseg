@@ -20,7 +20,8 @@
   body {
     background: var(--bg); color: var(--text);
     font-family: 'Instrument Sans', sans-serif;
-    display:flex; justify-content:center; align-items:center; min-height:100vh;
+    display:flex; justify-content:center; align-items:flex-start; min-height:100vh;
+    padding: 16px;
   }
   body::before {
     content:''; position:fixed; inset:0; pointer-events:none;
@@ -28,7 +29,7 @@
                 radial-gradient(ellipse at 70% 80%, rgba(100,140,180,0.05) 0%, transparent 50%);
   }
   .container {
-    width:760px; padding:40px 48px 32px; background:#fff;
+    width: 100%; max-width: 760px; padding: 32px 40px 28px; background:#fff;
     border-radius:16px; border:1px solid var(--border);
     box-shadow: 0 1px 3px var(--shadow), 0 8px 32px var(--shadow);
   }
@@ -44,10 +45,11 @@
   .total-badge {
     font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:500;
     color:var(--text-sec); background:var(--bg); border:1px solid var(--border);
-    padding:6px 14px; border-radius:8px;
+    padding:6px 14px; border-radius:8px; white-space: nowrap;
   }
 
-  #chart-area { margin-bottom:4px; }
+  #chart-area { margin-bottom:4px; overflow: hidden; }
+  #chart-area svg { width: 100%; height: auto; display: block; }
   .seg-info { text-align:center; font-size:13px; font-weight:500; color:var(--text-sec); min-height:20px; margin-bottom:20px; }
   .seg-info span { font-weight:700; }
 
@@ -62,6 +64,7 @@
   .add-btn:hover { background:#d1d5f0; }
   .add-btn:disabled { opacity:0.4; cursor:default; }
 
+  /* Desktop table */
   table { width:100%; border-collapse:collapse; table-layout:fixed; }
   thead th {
     font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em;
@@ -113,6 +116,57 @@
   .btn-pause:hover { background:#fdecc8; }
   .btn-reset { background:var(--bg); color:var(--text-sec); border:1px solid var(--border); }
   .btn-reset:hover { background:var(--bg2); color:var(--text); }
+
+  /* ── Mobile Responsive ── */
+  @media (max-width: 600px) {
+    body { padding: 8px; align-items: flex-start; }
+    .container { padding: 20px 16px 20px; border-radius: 12px; }
+
+    .header { margin-bottom: 20px; gap: 12px; }
+    .clock { font-size: 36px; }
+    .total-badge { font-size: 11px; padding: 5px 10px; }
+
+    .seg-info { font-size: 12px; margin-bottom: 16px; }
+
+    /* Table: stack layout on mobile */
+    table, thead, tbody, th, td, tr { display: block; width: 100%; }
+    thead { display: none; }
+
+    tbody tr {
+      display: grid;
+      grid-template-columns: 24px 1fr auto 28px;
+      grid-template-rows: auto;
+      align-items: center;
+      gap: 4px 8px;
+      padding: 10px 4px;
+      border-bottom: 1px solid rgba(221,215,206,0.5);
+    }
+
+    tbody td {
+      padding: 0;
+      border: none;
+    }
+    tbody td:nth-child(1) { padding-left: 0; grid-column: 1; grid-row: 1; }
+    tbody td:nth-child(2) { grid-column: 2; grid-row: 1; }
+    tbody td:nth-child(3) { grid-column: 3; grid-row: 1; text-align: right; }
+    tbody td:nth-child(4) { grid-column: 4; grid-row: 1; text-align: center; }
+
+    .name-in { font-size: 14px; }
+    .min-in { width: 40px; font-size: 12px; }
+    .min-suffix { font-size: 11px; }
+    .del-btn { font-size: 18px; padding: 4px 6px; }
+
+    .controls { gap: 8px; }
+    button.ctrl { padding: 12px 24px; font-size: 14px; flex: 1; max-width: 160px; }
+
+    .table-section { padding-top: 14px; margin-bottom: 16px; }
+  }
+
+  @media (max-width: 380px) {
+    .clock { font-size: 30px; }
+    .total-badge { font-size: 10px; padding: 4px 8px; }
+    .container { padding: 16px 12px 16px; }
+  }
 </style>
 </head>
 <body>
@@ -155,60 +209,35 @@ function lighten(hex) {
   return `rgb(${m(r)},${m(g)},${m(b)})`;
 }
 
-// ── Segment ──
 class Segment {
   constructor(name, minutes, color, colorLight) {
-    this.name = name;
-    this.minutes = minutes;
-    this.color = color;
-    this.colorLight = colorLight;
+    this.name = name; this.minutes = minutes;
+    this.color = color; this.colorLight = colorLight;
   }
 }
 
-// ── Model ──
 class TimerModel {
   constructor(segments) {
-    this.segments = segments;
-    this.elapsed = 0;
-    this.running = false;
-    this._iv = null;
-    this._cbs = [];
+    this.segments = segments; this.elapsed = 0;
+    this.running = false; this._iv = null; this._cbs = [];
   }
-
   get totalMinutes() { return this.segments.reduce((s, seg) => s + seg.minutes, 0); }
   get totalSeconds() { return this.totalMinutes * 60; }
   get remaining()    { return Math.max(0, this.totalSeconds - this.elapsed); }
   get progress()     { return this.totalSeconds > 0 ? Math.min(1, this.elapsed / this.totalSeconds) : 0; }
   get done()         { return this.totalSeconds > 0 && this.elapsed >= this.totalSeconds; }
-
   fraction(i) { return this.totalMinutes > 0 ? this.segments[i].minutes / this.totalMinutes : 0; }
-
   currentSegment() {
     let sec = 0;
-    for (const seg of this.segments) {
-      sec += seg.minutes * 60;
-      if (this.elapsed < sec) return seg;
-    }
+    for (const seg of this.segments) { sec += seg.minutes * 60; if (this.elapsed < sec) return seg; }
     return this.segments[this.segments.length - 1];
   }
-
   addSegment() {
     const p = PALETTE[this.segments.length % PALETTE.length];
-    this.segments.push(new Segment('New section', 5, p[0], p[1]));
-    this._emit();
+    this.segments.push(new Segment('New section', 5, p[0], p[1])); this._emit();
   }
-
-  removeSegment(i) {
-    if (this.segments.length <= 1) return;
-    this.segments.splice(i, 1);
-    this._emit();
-  }
-
-  updateSegment(i, props) {
-    Object.assign(this.segments[i], props);
-    this._emit();
-  }
-
+  removeSegment(i) { if (this.segments.length <= 1) return; this.segments.splice(i, 1); this._emit(); }
+  updateSegment(i, props) { Object.assign(this.segments[i], props); this._emit(); }
   start() {
     if (this.running || this.done || this.totalSeconds === 0) return;
     this.running = true;
@@ -219,41 +248,56 @@ class TimerModel {
     }, 1000);
     this._emit();
   }
-
   pause() { clearInterval(this._iv); this.running = false; this._emit(); }
   reset() { this.pause(); this.elapsed = 0; this._emit(); }
   onChange(fn) { this._cbs.push(fn); }
   _emit() { this._cbs.forEach(fn => fn(this)); }
 }
 
-// ── Bar View (D3) ──
 class BarView {
   constructor(sel, model) {
     this.model = model;
-    this.W = 664; this.H = 36; this.mt = 38; this.mb = 28;
-    this.x = d3.scaleLinear().domain([0,1]).range([0,this.W]);
+    this.container = document.querySelector(sel);
+    this.H = 36; this.mt = 38; this.mb = 28;
+
     this.svg = d3.select(sel).append('svg')
-      .attr('width', this.W).attr('height', this.mt + this.H + this.mb)
-      .attr('viewBox', `0 0 ${this.W} ${this.mt + this.H + this.mb}`);
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+
     const defs = this.svg.append('defs');
     this.clip = defs.append('clipPath').attr('id','pc').append('rect')
       .attr('x',0).attr('y',0).attr('width',0).attr('height',this.H).attr('rx',10);
     defs.append('clipPath').attr('id','bs').append('rect')
-      .attr('x',0).attr('y',0).attr('width',this.W).attr('height',this.H).attr('rx',10);
-    const g = this.svg.append('g').attr('transform',`translate(0,${this.mt})`);
-    this.bgG = g.append('g').attr('clip-path','url(#bs)');
-    this.fillG = g.append('g').attr('clip-path','url(#bs)').append('g').attr('clip-path','url(#pc)');
-    this.divG = g.append('g').attr('clip-path','url(#bs)');
-    g.append('rect').attr('width',this.W).attr('height',this.H).attr('rx',10)
+      .attr('x',0).attr('y',0).attr('height',this.H).attr('rx',10);
+
+    this.mainG = this.svg.append('g');
+    this.bgG = this.mainG.append('g').attr('clip-path','url(#bs)');
+    this.fillG = this.mainG.append('g').attr('clip-path','url(#bs)').append('g').attr('clip-path','url(#pc)');
+    this.divG = this.mainG.append('g').attr('clip-path','url(#bs)');
+    this.border = this.mainG.append('rect').attr('height',this.H).attr('rx',10)
       .attr('fill','none').attr('stroke','var(--border)').attr('stroke-width',1.5);
-    this.head = g.append('rect').attr('width',3).attr('height',this.H+4)
+    this.head = this.mainG.append('rect').attr('width',3).attr('height',this.H+4)
       .attr('y',-2).attr('rx',1.5).attr('fill','var(--text)').attr('opacity',0);
     this.nameG = this.svg.append('g');
     this.durG = this.svg.append('g');
+
+    this._resize();
+    window.addEventListener('resize', () => this._resize());
+  }
+
+  _resize() {
+    this.W = this.container.clientWidth;
+    this.x = d3.scaleLinear().domain([0,1]).range([0,this.W]);
+    const totalH = this.mt + this.H + this.mb;
+    this.svg.attr('viewBox', `0 0 ${this.W} ${totalH}`);
+    d3.select('#bs rect').attr('width', this.W);
+    this.border.attr('width', this.W);
+    this.mainG.attr('transform', `translate(0,${this.mt})`);
+    this.render(this.model);
   }
 
   render(m) {
-    const x = this.x, H = this.H, mt = this.mt, tot = m.totalMinutes;
+    const x = this.x, H = this.H, mt = this.mt;
+    if (!x) return;
     const sd = []; let c = 0;
     m.segments.forEach((seg, i) => {
       const f = m.fraction(i); const s = c; c += f;
@@ -272,21 +316,25 @@ class BarView {
       .attr('stroke','rgba(42,37,32,0.1)').attr('stroke-width',1);
     dl.exit().remove();
 
-    const vis = sd.filter(d=>(d.x1-d.x0)>40);
+    const minWidth = this.W < 400 ? 30 : 40;
+    const vis = sd.filter(d=>(d.x1-d.x0)>minWidth);
     const nl = this.nameG.selectAll('text').data(vis, d=>d.i);
+    const maxChars = this.W < 400 ? 5 : (this.W < 600 ? 7 : 10);
     nl.enter().append('text')
       .attr('font-family','Instrument Sans,sans-serif').attr('font-weight',600)
-      .attr('font-size',12).attr('fill','var(--text)').attr('pointer-events','none')
+      .attr('font-size', this.W < 400 ? 10 : 12).attr('fill','var(--text)').attr('pointer-events','none')
       .merge(nl)
+      .attr('font-size', this.W < 400 ? 10 : 12)
       .attr('x',d=>(d.x0+d.x1)/2).attr('y',mt-12).attr('text-anchor','middle')
-      .text(d=>{ const w=d.x1-d.x0; return w<70 && d.seg.name.length>8 ? d.seg.name.slice(0,6)+'…' : d.seg.name; });
+      .text(d=>{ const w=d.x1-d.x0; const mc = w < 60 ? maxChars : 20; return d.seg.name.length > mc ? d.seg.name.slice(0, mc-1)+'…' : d.seg.name; });
     nl.exit().remove();
 
     const dll = this.durG.selectAll('text').data(vis, d=>d.i);
     dll.enter().append('text')
       .attr('font-family','IBM Plex Mono,monospace').attr('font-weight',400)
-      .attr('font-size',10.5).attr('fill','var(--text-sec)').attr('pointer-events','none')
+      .attr('font-size', this.W < 400 ? 9 : 10.5).attr('fill','var(--text-sec)').attr('pointer-events','none')
       .merge(dll)
+      .attr('font-size', this.W < 400 ? 9 : 10.5)
       .attr('x',d=>(d.x0+d.x1)/2).attr('y',mt+H+16).attr('text-anchor','middle')
       .text(d=>d.seg.minutes>=1?`${d.seg.minutes}m`:`${(d.seg.minutes*60)|0}s`);
     dll.exit().remove();
@@ -301,18 +349,14 @@ class BarView {
   }
 }
 
-// ── Table View ──
 class TableView {
   constructor(tbodySel, model) {
-    this.tbody = document.querySelector(tbodySel);
-    this.model = model;
+    this.tbody = document.querySelector(tbodySel); this.model = model;
   }
-
   render(m) {
     const tb = this.tbody, dis = m.running;
     while (tb.rows.length > m.segments.length) tb.deleteRow(tb.rows.length-1);
     while (tb.rows.length < m.segments.length) this._addRow();
-
     m.segments.forEach((seg, i) => {
       const row = tb.rows[i];
       const dot = row.querySelector('.color-dot');
@@ -320,7 +364,6 @@ class TableView {
       const nIn = row.querySelector('.name-in');
       const mIn = row.querySelector('.min-in');
       const del = row.querySelector('.del-btn');
-
       dot.style.backgroundColor = seg.color;
       cIn.value = seg.color;
       if (document.activeElement !== nIn) nIn.value = seg.name;
@@ -329,22 +372,18 @@ class TableView {
       del.style.visibility = m.segments.length <= 1 ? 'hidden' : 'visible';
     });
   }
-
   _addRow() {
     const row = this.tbody.insertRow(), m = this.model;
     const idx = () => Array.from(this.tbody.rows).indexOf(row);
-
     const c1 = row.insertCell();
     const dot = document.createElement('div'); dot.className = 'color-dot';
     const cIn = document.createElement('input'); cIn.type = 'color';
     cIn.addEventListener('input', () => m.updateSegment(idx(), { color:cIn.value, colorLight:lighten(cIn.value) }));
     dot.appendChild(cIn); c1.appendChild(dot);
-
     const c2 = row.insertCell();
     const nIn = document.createElement('input'); nIn.type = 'text'; nIn.className = 'name-in';
     nIn.addEventListener('input', () => m.updateSegment(idx(), { name:nIn.value }));
     c2.appendChild(nIn);
-
     const c3 = row.insertCell(); c3.style.textAlign = 'right';
     const wrap = document.createElement('div');
     wrap.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:2px';
@@ -356,7 +395,6 @@ class TableView {
     });
     const suf = document.createElement('span'); suf.className = 'min-suffix'; suf.textContent = 'min';
     wrap.appendChild(mIn); wrap.appendChild(suf); c3.appendChild(wrap);
-
     const c4 = row.insertCell(); c4.style.textAlign = 'center';
     const del = document.createElement('button'); del.className = 'del-btn'; del.textContent = '×';
     del.addEventListener('click', () => m.removeSegment(idx()));
@@ -364,7 +402,6 @@ class TableView {
   }
 }
 
-// ── Controller ──
 class TimerController {
   constructor() {
     this.model = new TimerModel([
@@ -373,7 +410,6 @@ class TimerController {
       new Segment('Research project deep dive', 12, '#d4437b', '#fce4ec'),
       new Segment("Questions", 5, '#e6930a', '#fff8e1'),
     ]);
-
     this.bar = new BarView('#chart-area', this.model);
     this.table = new TableView('#tbody', this.model);
     this.clockEl = document.getElementById('clock');
@@ -382,22 +418,17 @@ class TimerController {
     this.startBtn = document.getElementById('startBtn');
     this.resetBtn = document.getElementById('resetBtn');
     this.addBtn = document.getElementById('addBtn');
-
     this.startBtn.addEventListener('click', () => this.model.running ? this.model.pause() : this.model.start());
     this.resetBtn.addEventListener('click', () => this.model.reset());
     this.addBtn.addEventListener('click', () => this.model.addSegment());
-
     this.model.onChange(m => this._update(m));
     this._update(this.model);
   }
-
   _fmt(s) { const m=Math.floor(s/60), r=s%60; return `${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`; }
-
   _update(m) {
     this.clockEl.textContent = this._fmt(m.remaining);
     this.clockEl.className = 'clock';
     this.badge.textContent = `${m.totalMinutes} min total`;
-
     if (m.segments.length >= 2 && m.elapsed > 0) {
       const last = m.segments[m.segments.length-1], pen = m.segments[m.segments.length-2];
       const dangerAt = 1 - (last.minutes / m.totalMinutes);
@@ -405,14 +436,12 @@ class TimerController {
       if (m.progress >= dangerAt) this.clockEl.classList.add('danger');
       else if (m.progress >= warnAt) this.clockEl.classList.add('warning');
     }
-
     if (m.elapsed > 0 && !m.done) {
       const seg = m.currentSegment();
       this.segEl.innerHTML = `Now: <span style="color:${seg.color}">${seg.name}</span>`;
     } else if (m.done) {
       this.segEl.innerHTML = `<span style="color:#c0392b">Time's up!</span>`;
     } else { this.segEl.innerHTML = ''; }
-
     if (m.running) {
       this.startBtn.textContent = 'Pause'; this.startBtn.className = 'ctrl btn-pause';
       this.addBtn.disabled = true;
@@ -424,7 +453,6 @@ class TimerController {
       this.startBtn.className = 'ctrl btn-start'; this.startBtn.disabled = false;
       this.addBtn.disabled = false;
     }
-
     this.bar.render(m);
     this.table.render(m);
   }
